@@ -1,0 +1,4 @@
+# khong up folder .venv
+.venv/
+# khong up file .env
+.env
