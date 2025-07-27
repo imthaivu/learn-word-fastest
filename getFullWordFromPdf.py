@@ -1,6 +1,20 @@
-import fitz  # pip install pymupdf
 import re
+import fitz  # pip install pymupdf
 import pandas as pd
+import nltk
+from nltk.stem import WordNetLemmatizer
+from tqdm import tqdm  # pip install tqdm
+
+# === Chuẩn bị ===
+nltk.download('wordnet', quiet=True)
+lemmatizer = WordNetLemmatizer()
+
+def normalize_phrasal(phrase: str) -> str:
+    words = phrase.split()
+    if not words:
+        return phrase
+    base = lemmatizer.lemmatize(words[0], 'v')
+    return " ".join([base] + words[1:])
 
 # === Đường dẫn file ===
 pdf_path = "ESL_Fast.pdf"
@@ -16,7 +30,7 @@ with open(phrasal_verbs_path, "r", encoding="utf-8") as f:
 phrasal_set = set(phrasal_lines)
 print(f"✅ Đã tải {len(phrasal_set)} cụm từ từ {phrasal_verbs_path}")
 
-# Sắp xếp theo độ dài từ nhiều từ đến ít từ
+# Sắp xếp theo độ dài giảm dần để ưu tiên cụm dài trước
 phrasal_sorted = sorted(phrasal_set, key=lambda x: -len(x.split()))
 
 # === Trích xuất văn bản từ PDF ===
@@ -27,12 +41,11 @@ text = text.lower().replace("’", "'")
 print("✅ Hoàn tất trích xuất và chuẩn hóa văn bản.")
 
 # === Thay thế phrasal verbs bằng token đặc biệt ===
-print("🔍 Đang thay thế phrasal verbs bằng token...")
+print("🔍 Đang thay thế phrasal verbs bằng token (có tiến trình)...")
 placeholder_map = {}
 token_id = 0
 
-for phrasal in phrasal_sorted:
-    # process each phrasal verb
+for phrasal in tqdm(phrasal_sorted, desc="Đang xử lý phrasal verbs"):
     pattern = r'(?<!\w)' + re.escape(phrasal) + r'(?!\w)'
     if re.search(pattern, text):
         token = f"__PHV{token_id}__"
@@ -41,28 +54,47 @@ for phrasal in phrasal_sorted:
         token_id += 1
 
 print(f"✅ Đã thay thế {len(placeholder_map)} phrasal verbs bằng token.")
+# === Phân bài học + tách từ vựng ===
+print("📚 Đang phân tích bài học và tách từ vựng...")
 
-# === Tách từ và loại trùng lặp ===
-print("🧹 Đang lọc từ vựng và loại trùng lặp...")
+lines = text.splitlines()
+output_rows = []
+current_title = ""
 seen = set()
-vocab_ordered = []
 
-for word in re.findall(r"\b[a-zA-Z']+\b|__PHV\d+__", text):
-    if word.startswith("__PHV"):
-        actual_phrase = placeholder_map[word]
-        if actual_phrase not in seen:
-            seen.add(actual_phrase)
-            vocab_ordered.append(actual_phrase)
+for line in lines:
+    line = line.strip()
+    if not line:
+        continue
+
+    # Nhận diện tiêu đề bài học: bắt đầu bằng 1–3 chữ số + dấu chấm
+    match = re.match(r'^(\d{1,3})\.\s*(.+)', line)
+    if match:
+        lesson_number = match.group(1)
+        title = match.group(2).strip()
+        current_title = f"{lesson_number}. {title}"
+        output_rows.append(current_title.lower())  # dòng tiêu đề
     else:
-        cleaned = word.strip("'")
-        if cleaned and cleaned not in seen:
-            seen.add(cleaned)
-            vocab_ordered.append(cleaned)
+        # Tìm các từ hoặc token trong dòng này
+        words = re.findall(r"\b[a-zA-Z']+\b|__PHV\d+__", line)
+        for word in words:
+            if word.startswith("__PHV"):
+                actual_phrase = placeholder_map.get(word, word)
+                norm = normalize_phrasal(actual_phrase)
+                if norm not in seen:
+                    seen.add(norm)
+                    output_rows.append(actual_phrase.lower())
+            else:
+                cleaned = word.strip("'")
+                norm = normalize_phrasal(cleaned)
+                if cleaned and norm not in seen:
+                    seen.add(norm)
+                    output_rows.append(cleaned.lower())
 
-print(f"✅ Trích xuất được {len(vocab_ordered)} từ vựng duy nhất.")
 
 # === Xuất ra Excel ===
-print(f"💾 Đang lưu danh sách từ vựng vào {output_path}...")
-df = pd.DataFrame(vocab_ordered, columns=["Vocabulary"])
+print(f"✅ Trích xuất được {len(output_rows)} dòng từ vựng và tiêu đề.")
+df = pd.DataFrame(output_rows, columns=["Vocabulary"])
+
 df.to_excel(output_path, index=False)
 print(f"🎉 Hoàn tất! File đã lưu tại: {output_path}")
