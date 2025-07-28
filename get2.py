@@ -17,7 +17,7 @@ def normalize_phrasal(phrase: str) -> str:
     return " ".join([base] + words[1:])
 
 # === Đường dẫn file ===
-pdf_path = "ESL_Fast.pdf"
+pdf_path = "LR.pdf"
 phrasal_verbs_path = "phrasalverbFullType.txt"
 output_path = "output.xlsx"
 
